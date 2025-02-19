@@ -1,7 +1,7 @@
 # 图片标注管理系统
 
 一个简单而强大的图片标注管理工具，支持批量标注、标注统计和筛选功能。适用于需要对大量图片进行标注和管理的场景。
-![image](https://github.com/user-attachments/assets/88c51528-97c5-4ae3-91b1-c91cae73b0a0)
+![image](https://github.com/user-attachments/assets/e8d05f3a-ce74-4fb2-abc7-b039a1570468)
 
 
 ## 功能特点
