@@ -3,6 +3,7 @@ from flask_cors import CORS
 from PIL import Image
 import io
 import os
+import json
 import logging
 from logging.handlers import RotatingFileHandler
 from functools import wraps
@@ -184,6 +185,84 @@ def save_annotation():
         f.write(content)
     
     return jsonify({'success': True})
+
+@app.route('/delete_image', methods=['POST'])
+@handle_errors
+def delete_image():
+    data = request.json
+    image_path = data.get('image_path')
+    txt_path = data.get('txt_path')
+    
+    if not image_path or not txt_path:
+        return jsonify({'error': '缺少必要参数'}), 400
+    
+    try:
+        # 删除图片文件
+        if os.path.exists(image_path):
+            os.remove(image_path)
+        
+        # 删除标注文件
+        if os.path.exists(txt_path):
+            os.remove(txt_path)
+        
+        # 如果图片在星标列表中，也要移除
+        with open('starred_images.json', 'r') as f:
+            starred_images = json.load(f)
+        
+        starred_images = [img for img in starred_images if img['image_path'] != image_path]
+        
+        with open('starred_images.json', 'w') as f:
+            json.dump(starred_images, f)
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f'删除文件出错: {str(e)}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/toggle_star', methods=['POST'])
+@handle_errors
+def toggle_star():
+    data = request.json
+    image_data = data.get('image_data')
+    
+    if not image_data:
+        return jsonify({'error': '缺少必要参数'}), 400
+    
+    try:
+        with open('starred_images.json', 'r') as f:
+            starred_images = json.load(f)
+        
+        # 检查图片是否已经在星标列表中
+        existing_index = next((i for i, img in enumerate(starred_images) 
+                             if img['image_path'] == image_data['image_path']), -1)
+        
+        if existing_index >= 0:
+            # 如果已存在，则移除星标
+            starred_images.pop(existing_index)
+            is_starred = False
+        else:
+            # 如果不存在，则添加星标
+            starred_images.insert(0, image_data)
+            is_starred = True
+        
+        with open('starred_images.json', 'w') as f:
+            json.dump(starred_images, f)
+        
+        return jsonify({'success': True, 'is_starred': is_starred})
+    except Exception as e:
+        app.logger.error(f'处理星标出错: {str(e)}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get_starred_images')
+@handle_errors
+def get_starred_images():
+    try:
+        with open('starred_images.json', 'r') as f:
+            starred_images = json.load(f)
+        return jsonify(starred_images)
+    except Exception as e:
+        app.logger.error(f'获取星标图片出错: {str(e)}')
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     setup_logger()

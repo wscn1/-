@@ -87,35 +87,146 @@ function renderFilteredImages(images) {
     const container = document.getElementById('imageContainer');
     container.innerHTML = '';
 
-    const filteredImages = activeTag 
-        ? images.filter(img => img.annotation.includes(activeTag))
-        : images;
+    // 获取星标图片
+    fetch('/get_starred_images')
+        .then(response => response.json())
+        .then(starredImages => {
+            const starredImagePaths = new Set(starredImages.map(img => img.image_path));
+            
+            const filteredImages = activeTag 
+                ? images.filter(img => img.annotation.includes(activeTag))
+                : images;
 
-    filteredImages.forEach(imageData => {
-        const div = document.createElement('div');
-        div.className = 'image-item';
-        
-        const img = document.createElement('img');
-        // 修改：确保路径正确编码
-        const thumbnailPath = encodeURIComponent(imageData.image_path);
-        img.src = `/thumbnail/${thumbnailPath}`;
-        img.alt = imageData.image_path.split('/').pop();
-        img.loading = 'lazy';
-        
-        img.onerror = () => {
-            console.error('缩略图加载失败:', imageData.image_path);
-            img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150"><rect width="100%" height="100%" fill="%23ddd"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%23666">加载失败</text></svg>';
-        };
-        
-        const nameLabel = document.createElement('div');
-        nameLabel.className = 'image-name';
-        nameLabel.textContent = imageData.image_path.split('/').pop();
-        
-        div.appendChild(img);
-        div.appendChild(nameLabel);
-        div.onclick = () => showPreview(imageData);
-        container.appendChild(div);
+            // 先渲染星标图片
+            filteredImages
+                .filter(img => starredImagePaths.has(img.image_path))
+                .forEach(imageData => createImageElement(imageData, true));
+
+            // 再渲染非星标图片
+            filteredImages
+                .filter(img => !starredImagePaths.has(img.image_path))
+                .forEach(imageData => createImageElement(imageData, false));
+        });
+}
+
+function createImageElement(imageData, isStarred) {
+    const div = document.createElement('div');
+    div.className = 'image-item';
+    
+    const img = document.createElement('img');
+    const thumbnailPath = encodeURIComponent(imageData.image_path);
+    img.src = `/thumbnail/${thumbnailPath}`;
+    img.alt = imageData.image_path.split('/').pop();
+    img.loading = 'lazy';
+    
+    img.onerror = () => {
+        console.error('缩略图加载失败:', imageData.image_path);
+        img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150"><rect width="100%" height="100%" fill="%23ddd"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%23666">加载失败</text></svg>';
+    };
+    
+    const nameLabel = document.createElement('div');
+    nameLabel.className = 'image-name';
+    nameLabel.textContent = imageData.image_path.split('/').pop();
+    
+    // 添加操作按钮容器
+    const buttonContainer = document.createElement('div');
+    buttonContainer.className = 'image-actions';
+    
+    // 添加星标按钮
+    const starButton = document.createElement('button');
+    starButton.className = `star-btn ${isStarred ? 'starred' : ''}`;
+    starButton.innerHTML = isStarred ? '⭐' : '☆';
+    starButton.title = isStarred ? '取消星标' : '添加星标';
+    starButton.onclick = (e) => {
+        e.stopPropagation();
+        toggleImageStar(imageData);
+    };
+    
+    // 添加删除按钮
+    const deleteButton = document.createElement('button');
+    deleteButton.className = 'delete-btn';
+    deleteButton.innerHTML = '🗑️';
+    deleteButton.title = '删除图片';
+    deleteButton.onclick = (e) => {
+        e.stopPropagation();
+        deleteImage(imageData);
+    };
+    
+    buttonContainer.appendChild(starButton);
+    buttonContainer.appendChild(deleteButton);
+    
+    div.appendChild(img);
+    div.appendChild(nameLabel);
+    div.appendChild(buttonContainer);
+    div.onclick = () => showPreview(imageData);
+    
+    const container = document.getElementById('imageContainer');
+    container.appendChild(div);
+}
+
+function toggleImageStar(imageData) {
+    fetch('/toggle_star', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ image_data: imageData })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            renderFilteredImages(allImages);
+        } else {
+            alert('操作失败：' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('操作失败');
     });
+}
+
+function deleteImage(imageData) {
+    if (confirm('确定要删除这张图片吗？此操作不可恢复！')) {
+        fetch('/delete_image', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                image_path: imageData.image_path,
+                txt_path: imageData.txt_path
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // 从数组中移除被删除的图片
+                allImages = allImages.filter(img => 
+                    img.image_path !== imageData.image_path
+                );
+                
+                // 如果当前预览的是被删除的图片，清空预览和重置状态
+                if (currentImageData && 
+                    currentImageData.image_path === imageData.image_path) {
+                    currentImageData = null;
+                    currentImageIndex = -1;
+                    document.getElementById('previewImage').src = '';
+                    document.getElementById('annotation').value = '';
+                }
+                
+                // 更新标签统计和图片列表
+                updateTagStats(allImages);
+                renderFilteredImages(allImages);
+            } else {
+                alert('删除失败：' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('删除失败');
+        });
+    }
 }
 
 function showPreview(imageData) {
